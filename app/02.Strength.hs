@@ -9,15 +9,12 @@ import Foreign.Storable (sizeOf, peek, poke, Storable)
 import Graphics.GLUtil (readTexture, texture2DWrap)
 import Graphics.Rendering.OpenGL as GL
 import Graphics.UI.GLFW as GLFW
-import GHC.Float
 import LoadShaders
 import System.Exit (exitSuccess)
 import Text.Printf
 
 data Descriptor =
-     Descriptor VertexArrayObject NumArrayIndices Time
-
-type Time = Double     
+     Descriptor VertexArrayObject NumArrayIndices
 
 data GLMatrix a =
      GLMatrix !a !a !a !a
@@ -102,28 +99,27 @@ display :: IO ()
 display =
   do
     inWindow <- openWindow "NGL is Not GLoss" (512,512)
-    mainLoop inWindow 0.0
-    closeWindow inWindow    
+    descriptor <- initResources verticies indices
+    onDisplay inWindow descriptor
+    closeWindow inWindow
                  
-mainLoop :: GLFW.Window -> Time -> IO ()
-mainLoop win time =
+onDisplay :: GLFW.Window -> Descriptor -> IO ()
+onDisplay win descriptor@(Descriptor triangles numIndices) =
   do
-    -- print $ "time: " ++ (show time)
-    descriptor@(Descriptor triangles numIndices time) <- initResources verticies indices time
-    
     GL.clearColor $= Color4 0.1 0.1 0.1 1.0
     GL.clear [ColorBuffer]
     bindVertexArrayObject $= Just triangles
     drawElements Triangles numIndices GL.UnsignedInt nullPtr
     GLFW.swapBuffers win
-    GLFW.pollEvents
-    Just t <- GLFW.getTime
-    mainLoop win t
+   
+    forever $ do
+       GLFW.pollEvents
+       onDisplay win descriptor                 
 
 -- | Init resources
 ---------------------------------------------------------------------------
-initResources :: [GLfloat] -> [GLuint] -> Time -> IO Descriptor
-initResources vs idx time =
+initResources :: [GLfloat] -> [GLuint] -> IO Descriptor
+initResources vs idx =
   do
     -- | VAO
     triangles <- genObjectName
@@ -175,16 +171,13 @@ initResources vs idx time =
     -- || Shaders
     program <- loadShaders [
         ShaderInfo VertexShader   (FileSource "Shaders/01.justice.vert"),
-        ShaderInfo FragmentShader (FileSource "Shaders/meditation.frag")]
+        ShaderInfo FragmentShader (FileSource "Shaders/01.justice.frag")]
     currentProgram $= Just program
 
     -- Set Uniforms
     location0 <- get (uniformLocation program "u_resolution")
     let u_res = Vector2 512 512 :: Vector2 GLfloat
     uniform location0 $= u_res
-
-    location1 <- get (uniformLocation program "u_time")
-    uniform location1 $= ((double2Float time) :: GLfloat)
 
     -- Set Transform Matrix
     let tr =
@@ -201,7 +194,7 @@ initResources vs idx time =
     bindVertexArrayObject         $= Nothing
     -- bindBuffer ElementArrayBuffer $= Nothing
 
-    return $ Descriptor triangles (fromIntegral numIndices) time
+    return $ Descriptor triangles (fromIntegral numIndices)
 
 makeStateVarFromPtr :: Storable a => Ptr a -> StateVar a
 makeStateVarFromPtr p = makeStateVar (peek p) (poke p)    
